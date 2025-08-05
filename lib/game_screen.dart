@@ -293,6 +293,40 @@ class _GameScreenState extends State<GameScreen> {
       },
     );
   }
+  
+  String _getCardImagePath(my_models.Card card) {
+    final suitNames = {
+      my_models.Suit.clubs: 'Club',
+      my_models.Suit.diamonds: 'Diamond',
+      my_models.Suit.hearts: 'Heart',
+      my_models.Suit.spades: 'Spade',
+    };
+
+    final rankNames = {
+      my_models.Rank.two: '2',
+      my_models.Rank.three: '3',
+      my_models.Rank.four: '4',
+      my_models.Rank.five: '5',
+      my_models.Rank.six: '6',
+      my_models.Rank.seven: '7',
+      my_models.Rank.eight: '8',
+      my_models.Rank.nine: '9',
+      my_models.Rank.ten: '10',
+      my_models.Rank.jack: 'J',
+      my_models.Rank.queen: 'Q',
+      my_models.Rank.king: 'K',
+      my_models.Rank.ace: 'A',
+    };
+
+    String? suit = suitNames[card.suit];
+    String? rank = rankNames[card.rank];
+
+    if (suit == null || rank == null) {
+      return 'assets/card_images/back.png';
+    }
+
+    return 'assets/card_images/$suit$rank.png';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -351,9 +385,19 @@ class _GameScreenState extends State<GameScreen> {
           const Text('手牌数: 未知', style: TextStyle(fontSize: 14)),
         const SizedBox(height: 8),
         if (player.id != 0)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(player.cardCount, (index) => const Icon(Icons.style, size: 24)),
+          Wrap(
+            spacing: -20.0,
+            children: List.generate(
+              player.cardCount,
+              (index) => Container(
+                width: 40,
+                height: 60,
+                child: Image.asset(
+                  'assets/card_images/back.png',
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
           ),
       ],
     );
@@ -397,24 +441,14 @@ class _GameScreenState extends State<GameScreen> {
           children: currentPlayedCardsInfo.map((info) {
             final isRevealed = info['revealed'] as bool;
             final card = info['card'] as my_models.Card;
-            final cardName = isRevealed ? card.rank.toString().split('.').last : '';
+            final imagePath = isRevealed ? _getCardImagePath(card) : 'assets/card_images/back.png';
             
             return Column(
               children: [
                 Container(
                   width: 60,
                   height: 90,
-                  decoration: BoxDecoration(
-                    color: isRevealed ? Colors.white : Colors.brown,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black),
-                  ),
-                  child: Center(
-                    child: Text(
-                      cardName.toUpperCase(),
-                      style: TextStyle(color: isRevealed ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                  child: Image.asset(imagePath),
                 ),
                 Text(
                   '${info['player']}',
@@ -455,7 +489,7 @@ class _GameScreenState extends State<GameScreen> {
             final isSelected = selectedCards.contains(card);
             return GestureDetector(
               onTap: () => _onCardTapped(card),
-              child: CardWidget(card: card, isSelected: isSelected),
+              child: CardWidget(card: card, isSelected: isSelected, imagePath: _getCardImagePath(card)),
             );
           }).toList(),
         ),
@@ -507,8 +541,9 @@ class _GameScreenState extends State<GameScreen> {
 class CardWidget extends StatelessWidget {
   final my_models.Card card;
   final bool isSelected;
+  final String imagePath;
   
-  const CardWidget({Key? key, required this.card, this.isSelected = false}) : super(key: key);
+  const CardWidget({Key? key, required this.card, this.isSelected = false, required this.imagePath}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -516,21 +551,13 @@ class CardWidget extends StatelessWidget {
       width: 60,
       height: 90,
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.blue.withOpacity(0.5) : Colors.white,
-        border: Border.all(color: isSelected ? Colors.blue : Colors.black),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Center(
-        child: Text(
-          card.rank.toString().split('.').last.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
-        ),
-      ),
+      decoration: isSelected 
+          ? BoxDecoration(
+              border: Border.all(color: Colors.blue, width: 3),
+              borderRadius: BorderRadius.circular(8),
+            ) 
+          : null,
+      child: Image.asset(imagePath),
     );
   }
 }
