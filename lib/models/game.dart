@@ -1,19 +1,46 @@
 // lib/models/game.dart
 
 import 'package:cui707cheatpoker/models/card.dart';
-import 'package:cui707cheatpoker/models/player.dart';
 import 'dart:math';
+
+class Player {
+  final int id;
+  final String name;
+  List<Card> hand = [];
+
+  Player({required this.id, required this.name});
+
+  int get cardCount => hand.length;
+
+  void addCards(List<Card> cards) {
+    hand.addAll(cards);
+  }
+
+  void removeCards(List<Card> cards) {
+    for (var card in cards) {
+      hand.remove(card);
+    }
+  }
+
+  bool hasCards(List<Card> cards) {
+    for (var card in cards) {
+      if (!hand.contains(card)) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
 
 class Game {
   late List<Player> players;
   late List<Card> deck;
   List<Card> playedPile = [];
   List<Card> lastPlayedCards = [];
-  String lastCalledRank = '';
+  Rank? lastCalledRank;
   int currentPlayerIndex = 0;
   int playersPassedCount = 0;
   
-  bool isHandCountVisible = false;
   bool mustChallenge = false;
   Player? lastPlayerToPlayAllCards;
 
@@ -35,8 +62,7 @@ class Game {
     playersPassedCount = 0;
     playedPile.clear();
     lastPlayedCards.clear();
-    lastCalledRank = '';
-    isHandCountVisible = false;
+    lastCalledRank = null;
     mustChallenge = false;
     lastPlayerToPlayAllCards = null;
   }
@@ -44,10 +70,16 @@ class Game {
   List<Card> _createDeck() {
     List<Card> newDeck = [];
     for (var suit in Suit.values) {
+      if (suit == Suit.none) continue;
       for (var rank in Rank.values) {
+        if (rank == Rank.jokerA || rank == Rank.jokerB) continue;
         newDeck.add(Card(suit, rank));
       }
     }
+    // 添加大小王
+    newDeck.add(Card(Suit.none, Rank.jokerA));
+    newDeck.add(Card(Suit.none, Rank.jokerB));
+    
     return newDeck;
   }
 
@@ -65,17 +97,6 @@ class Game {
 
   Player get currentPlayer => players[currentPlayerIndex];
 
-  void _checkHandCounts() {
-    bool hasPlayerWithFewCards = false;
-    for (var player in players) {
-      if (player.cardCount < 5) {
-        hasPlayerWithFewCards = true;
-        break;
-      }
-    }
-    isHandCountVisible = hasPlayerWithFewCards;
-  }
-
   void playCards({required Player player, required List<Card> cardsToPlay, required Rank calledRank}) {
     if (player.id != currentPlayer.id) {
       throw Exception('不是该玩家的回合！');
@@ -90,11 +111,10 @@ class Game {
 
     player.removeCards(cardsToPlay);
     
+    lastPlayedCards.clear();
     lastPlayedCards.addAll(cardsToPlay);
-    lastCalledRank = calledRank.toString().split('.').last;
+    lastCalledRank = calledRank;
     playersPassedCount = 0;
-
-    _checkHandCounts();
 
     if (player.cardCount == 0) {
       mustChallenge = true;
@@ -117,14 +137,12 @@ class Game {
     if (playersPassedCount == players.length - 1) {
       playedPile.addAll(lastPlayedCards);
       lastPlayedCards.clear();
-      lastCalledRank = '';
+      lastCalledRank = null;
       playersPassedCount = 0;
       _nextTurn();
-      _checkHandCounts();
       return true;
     }
     _nextTurn();
-    _checkHandCounts();
     return false;
   }
 
@@ -133,41 +151,50 @@ class Game {
     
     bool isLiar = false;
     for (var card in lastPlayedCards) {
-      if (card.rank.toString().split('.').last.toLowerCase() != lastCalledRank.toLowerCase()) {
+      if (card.rank != lastCalledRank) {
         isLiar = true;
         break;
       }
     }
     
     if (mustChallenge) {
-      if (!isLiar) {
-        return liar.name;
-      } else {
+      if (isLiar) {
+        // 质疑成功，出牌者是骗子，拿走所有牌
+        liar.addCards(playedPile);
         liar.addCards(lastPlayedCards);
+        playedPile.clear();
         lastPlayedCards.clear();
-        lastCalledRank = '';
+        lastCalledRank = null;
         currentPlayerIndex = challenger.id;
         mustChallenge = false;
         lastPlayerToPlayAllCards = null;
         playersPassedCount = 0;
         return null;
+      } else {
+        // 质疑失败，出牌者是赢家
+        return liar.name;
       }
     }
     
     if (isLiar) {
+      // 质疑成功
+      liar.addCards(playedPile);
       liar.addCards(lastPlayedCards);
       lastPlayedCards.clear();
-      lastCalledRank = '';
+      playedPile.clear();
+      lastCalledRank = null;
       currentPlayerIndex = challenger.id;
     } else {
+      // 质疑失败
+      challenger.addCards(playedPile);
       challenger.addCards(lastPlayedCards);
       lastPlayedCards.clear();
-      lastCalledRank = '';
+      playedPile.clear();
+      lastCalledRank = null;
       currentPlayerIndex = liar.id;
     }
 
     playersPassedCount = 0;
-    _checkHandCounts();
     return null;
   }
 }

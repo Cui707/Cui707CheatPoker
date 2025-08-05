@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:cui707cheatpoker/models/card.dart' as my_models;
 import 'package:cui707cheatpoker/models/game.dart';
-import 'package:cui707cheatpoker/models/player.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({Key? key}) : super(key: key);
@@ -57,10 +56,11 @@ class _GameScreenState extends State<GameScreen> {
       return;
     }
 
-    List<my_models.Card> cardsToPlay;
+    List<my_models.Card> cardsToPlay = [];
     my_models.Rank calledRank;
     
-    if (game.lastPlayedCards.isEmpty) {
+    // 修复 AI 逻辑，使其在游戏开始时能正常出牌
+    if (game.lastCalledRank == null) {
       int maxCardsToPlay = min(game.currentPlayer.hand.length, 6);
       int cardsToPlayCount = Random().nextInt(maxCardsToPlay) + 1;
       cardsToPlay = game.currentPlayer.hand.sublist(0, cardsToPlayCount);
@@ -85,15 +85,7 @@ class _GameScreenState extends State<GameScreen> {
         int cardsToPlayCount = Random().nextInt(maxCardsToPlay) + 1;
         cardsToPlay = game.currentPlayer.hand.sublist(0, cardsToPlayCount);
         
-        final rankName = game.lastCalledRank;
-        my_models.Rank? tempCalledRank;
-        for (var rank in my_models.Rank.values) {
-          if (rank.toString().split('.').last.toLowerCase() == rankName.toLowerCase()) {
-            tempCalledRank = rank;
-            break;
-          }
-        }
-        calledRank = tempCalledRank ?? my_models.Rank.ace;
+        calledRank = game.lastCalledRank!;
       }
     }
     
@@ -109,7 +101,7 @@ class _GameScreenState extends State<GameScreen> {
       calledRank: calledRank,
     );
     
-    _updateUI(message: '${game.players[(game.currentPlayerIndex - 1 + game.players.length) % game.players.length].name} 出牌了 ${cardsToPlay.length} 张，并喊：${calledRank.toString().split('.').last.toUpperCase()}！\n轮到 ${game.currentPlayer.name}。');
+    _updateUI(message: '${game.players[(game.currentPlayerIndex - 1 + game.players.length) % game.players.length].name} 出牌了 ${cardsToPlay.length} 张，并喊：${_getRankDisplayString(calledRank)}！\n轮到 ${game.currentPlayer.name}。');
   }
 
   void _onCardTapped(my_models.Card card) {
@@ -143,6 +135,22 @@ class _GameScreenState extends State<GameScreen> {
       my_models.Rank.seven, my_models.Rank.eight, my_models.Rank.nine, my_models.Rank.ten, my_models.Rank.jack,
       my_models.Rank.queen, my_models.Rank.king, my_models.Rank.ace,
     ];
+    
+    final Map<my_models.Rank, String> rankDisplayMap = {
+      my_models.Rank.two: '2',
+      my_models.Rank.three: '3',
+      my_models.Rank.four: '4',
+      my_models.Rank.five: '5',
+      my_models.Rank.six: '6',
+      my_models.Rank.seven: '7',
+      my_models.Rank.eight: '8',
+      my_models.Rank.nine: '9',
+      my_models.Rank.ten: '10',
+      my_models.Rank.jack: 'J',
+      my_models.Rank.queen: 'Q',
+      my_models.Rank.king: 'K',
+      my_models.Rank.ace: 'A',
+    };
 
     showDialog(
       context: context,
@@ -157,7 +165,7 @@ class _GameScreenState extends State<GameScreen> {
                   Navigator.of(context).pop();
                   _playSelectedCards(rank);
                 },
-                child: Text(rank.toString().split('.').last.toUpperCase()),
+                child: Text(rankDisplayMap[rank]!),
               );
             }).toList(),
           ),
@@ -176,30 +184,27 @@ class _GameScreenState extends State<GameScreen> {
       return;
     }
 
+    if (game.lastCalledRank != null && calledRank == null) {
+      calledRank = game.lastCalledRank;
+    }
+    
+    if (calledRank == null) {
+      return;
+    }
+
     List<Map<String, dynamic>> newCardsInfo = List.generate(
       selectedCards.length,
       (index) => {'player': lastPlayer.name, 'card': selectedCards[index], 'revealed': false},
     );
     currentPlayedCardsInfo.addAll(newCardsInfo);
 
-    my_models.Rank finalCalledRank;
-    if (calledRank == null) {
-      final calledRankFromGame = my_models.Rank.values.firstWhere(
-        (rank) => rank.toString().split('.').last.toLowerCase() == game.lastCalledRank.toLowerCase(),
-        orElse: () => my_models.Rank.ace,
-      );
-      finalCalledRank = calledRankFromGame;
-    } else {
-      finalCalledRank = calledRank;
-    }
-
     game.playCards(
       player: lastPlayer,
       cardsToPlay: selectedCards,
-      calledRank: finalCalledRank,
+      calledRank: calledRank,
     );
 
-    _gameMessage = '${lastPlayer.name} 出牌了 ${selectedCards.length} 张，并喊：${finalCalledRank.toString().split('.').last.toUpperCase()}！\n轮到 ${game.currentPlayer.name}。';
+    _gameMessage = '${lastPlayer.name} 出牌了 ${selectedCards.length} 张，并喊：${_getRankDisplayString(calledRank)}！\n轮到 ${game.currentPlayer.name}。';
     selectedCards.clear();
     _updateUI();
   }
@@ -239,17 +244,22 @@ class _GameScreenState extends State<GameScreen> {
 
     String? winnerName = game.challenge(challenger: challenger);
     
-    if (winnerName != null) {
-      _updateUI(message: '${challenger.name} 质疑失败！${liar.name} 确实出光了所有手牌。${winnerName} 赢得了游戏！');
-      _showWinnerDialog(winnerName);
-      currentPlayedCardsInfo.clear();
-      return;
+    bool isLiar = false;
+    for (var card in currentPlayedCardsInfo) {
+      if ((card['card'] as my_models.Card).rank != game.lastCalledRank) {
+        isLiar = true;
+        break;
+      }
     }
 
     if (game.mustChallenge) {
-      _updateUI(message: '${challenger.name} 质疑成功！${liar.name} 说谎了，拿走了所有牌。\n轮到 ${challenger.name} 开始新一轮。');
+      if (winnerName != null) {
+        _updateUI(message: '${challenger.name} 质疑失败！${liar.name} 确实出光了所有手牌。${winnerName} 赢得了游戏！');
+        _showWinnerDialog(winnerName);
+      } else {
+        _updateUI(message: '${challenger.name} 质疑成功！${liar.name} 说谎了，拿走了所有牌。\n轮到 ${challenger.name} 开始新一轮。');
+      }
     } else {
-      bool isLiar = game.players[(game.currentPlayerIndex - 1 + game.players.length) % game.players.length] == liar;
       if (isLiar) {
         _updateUI(message: '${challenger.name} 质疑成功！${liar.name} 说谎了，拿走了所有牌。\n由 ${challenger.name} 开始出牌。');
       } else {
@@ -258,15 +268,7 @@ class _GameScreenState extends State<GameScreen> {
     }
     currentPlayedCardsInfo.clear();
   }
-
-  void _checkWinner() {
-    for (var player in game.players) {
-      if (player.cardCount == 0) {
-        return;
-      }
-    }
-  }
-
+  
   void _showWinnerDialog(String winnerName) {
     showDialog(
       context: context,
@@ -295,6 +297,9 @@ class _GameScreenState extends State<GameScreen> {
   }
   
   String _getCardImagePath(my_models.Card card) {
+    if (card.rank == my_models.Rank.jokerA) return 'assets/card_images/JOKER-A.png';
+    if (card.rank == my_models.Rank.jokerB) return 'assets/card_images/JOKER-B.png';
+    
     final suitNames = {
       my_models.Suit.clubs: 'Club',
       my_models.Suit.diamonds: 'Diamond',
@@ -327,6 +332,28 @@ class _GameScreenState extends State<GameScreen> {
 
     return 'assets/card_images/$suit$rank.png';
   }
+  
+  String _getRankDisplayString(my_models.Rank rank) {
+    switch (rank) {
+      case my_models.Rank.two: return '2';
+      case my_models.Rank.three: return '3';
+      case my_models.Rank.four: return '4';
+      case my_models.Rank.five: return '5';
+      case my_models.Rank.six: return '6';
+      case my_models.Rank.seven: return '7';
+      case my_models.Rank.eight: return '8';
+      case my_models.Rank.nine: return '9';
+      case my_models.Rank.ten: return '10';
+      case my_models.Rank.jack: return 'J';
+      case my_models.Rank.queen: return 'Q';
+      case my_models.Rank.king: return 'K';
+      case my_models.Rank.ace: return 'A';
+      case my_models.Rank.jokerA: return 'Joker A';
+      case my_models.Rank.jokerB: return 'Joker B';
+      default: return '';
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -418,11 +445,13 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildCalledRankDisplay() {
+    String rankName = game.lastCalledRank == null ? '无' : _getRankDisplayString(game.lastCalledRank!);
+    
     return Column(
       children: [
         const Text('当前叫牌', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         Text(
-          game.lastCalledRank.isEmpty ? '无' : game.lastCalledRank.toUpperCase(),
+          rankName,
           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue),
         ),
       ],
@@ -521,16 +550,16 @@ class _GameScreenState extends State<GameScreen> {
       children: [
         ElevatedButton(
           onPressed: selectedCards.isNotEmpty
-              ? (game.lastPlayedCards.isEmpty ? _showCallRankDialog : () => _playSelectedCards(null))
+              ? (game.lastCalledRank == null ? _showCallRankDialog : () => _playSelectedCards(null))
               : null,
           child: const Text('出牌'),
         ),
         ElevatedButton(
-          onPressed: game.lastPlayedCards.isNotEmpty ? () => _onPassButtonPressed() : null,
+          onPressed: game.lastCalledRank != null ? () => _onPassButtonPressed() : null,
           child: const Text('过牌'),
         ),
         ElevatedButton(
-          onPressed: game.lastPlayedCards.isNotEmpty ? () => _onChallengeButtonPressed() : null,
+          onPressed: game.lastCalledRank != null ? () => _onChallengeButtonPressed() : null,
           child: const Text('质疑'),
         ),
       ],
